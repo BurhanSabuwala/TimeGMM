@@ -351,25 +351,27 @@ def contour_plot_3d(params, limits, offset = 1, num_classes = None):
 
 
 
-def TimeGMM(X,Q,case = "full",tol = 1e-8):
+def TimeGMM(X, Timepoints, Q,case = "full",tol = 1e-8):
   """
   Trains/Fits GMM Model for each class using Expectation Maximization Algorithm
-  X - Training Data (preferably numpy array)
-  y - Training Labels
-  classes - list of classes in order
+  X - {t: data - (numpy 2d array)}
+  Timepoints - Array of timepoints [0, 2, 4, 12, 24]
   Q - Number of clusters for each class
 
   returns - final parameter set : params, predicted data classes, Posterior
   """
+  Timepoints = 
   classes = np.array([0])
   y = np.array([0 for i in range(len(X))])
 
-  n,d = np.shape(X)
+  n_t = {}; d_t = {}
+  for t in Timepoints:
+    n,d = np.shape(t)
+    n_t[t] = n
+    d_t[t] = d
+  #n,d = np.shape(X)
 
-  #Initializing parameters for each class using kmeans
-  init_params = initialize(X,Q,case)
-
-  #Stores parameters (w,mu,cov) for each class c and each subclass q
+  #Stores parameters (w, v, cov, c) for each class c and each subclass q
   params = {}
 
   #Class Prior Probabilities
@@ -382,88 +384,107 @@ def TimeGMM(X,Q,case = "full",tol = 1e-8):
 
     params = {}
 
-    log_prob_a = 0  #log likelihood before update
-    log_prob_b = 0  #log likelihood after update
+    log_prob_a = 0  # log likelihood before update
+    log_prob_b = 0  # log likelihood after update
 
-    X_c = X[(y==c).ravel(),:] #Data belonging to class c
+    X_c = X[(y==c).ravel(),:] # Data belonging to class c
     n_c = X_c.shape[0]  
-
-
-    """Initialization"""
-    
+    c_mat = np.zeros(d_t[Timepoints[0]],Q)
 
     while (abs(log_prob_a-log_prob_b)>tol or ite == 0) and ite<100:
+      #*** Initialization step ***
+      if ite == 0:
+        time0_params = gmm(X[Timepoints[0]], Q, case) # Data of timepoint 0
+        #for each component
+        for q in range(Q):
+          params[q]['c'] = time0_params[q]['mu']
+          c_mat[:,q] = params[q]['c']
+          params[q][Timepoints[0]]['cov'] = time0_params[q]['cov']
+          params[q][Timepoints[0]]['w'] = time0_params[q]['w']
 
       #***Expectation Step - Calculating Posterior***
 
-      posterior = np.zeros((n_c,Q))
-      log_prob_b = log_prob_a
-      log_prob_a = 0
+      #For each timepoint
+      posterior = {}
+      for t in len(1,range(Timepoints)):
+        posterior[Timepoints[t]] = np.zeros((n_t[t], Q))
+        log_prob_b = log_prob_a
+        log_prob_a = 0
 
-      #For each Component
-      for q in range(Q):
-        if ite == 0:
-          mu_q = init_params[q]['mu']
-          cov_q = init_params[q]['cov']
-          w_q = init_params[q]['w']
 
-        else:
-          mu_q = params[q]['mu']
-          cov_q = params[q]['cov']
-          w_q = params[q]['w']
+        #For each Component
+        for q in range(Q):
+          if ite == 0:
+            #Initializing parameters for each class using kmeans
+            v_q = np.zeros(size = len(d_t[Timepoints[t]]))
+            mu_q = v_q * Timepoints[t] + params[q]['c']
+            #mu_q = init_params[q]['mu']
+            cov_q = init_params[q][Timepoints[t-1]]['cov']
+            w_q = init_params[q][Timepoints[t-1]]['w']
 
-        min_eig = 1
-        det =  np.linalg.det(cov_q)
+          else:
+            v_q = params[q]['v']
+            cov_q = params[q][Timepoints[t]]['cov']
+            w_q = params[q][Timepoint[t]]['w']
 
-        #Inspecting the Covariance Matrix and enforcing non-singularity and positive definitiveness
-        while abs(det)<1e-12 or det<0 or min_eig < 0:
-          cov_q += abs(np.diag((np.random.normal(0,2,(d,1))).ravel()))  ##Addition of Gaussian Noise
-          det = np.linalg.det(cov_q)
-          if det > 0:
-            min_eig = np.min(np.real(np.linalg.eigvals(cov_q)))         ##Minimum Eigenvalue
-        
-        icov_q = np.linalg.inv(cov_q)  ##Inverse of Covariance Matrix
+          min_eig = 1
+          det =  np.linalg.det(cov_q)
 
-        #Calculating likelihood given component/cluster
-        #X -> (nxd), mu_q -> (dx1), cov_q -> (dxd), finally, tmp -> (nx1)
-        tmp  = np.sum(np.dot((X_c.T-mu_q).T,icov_q) * (X_c.T-mu_q).T,axis=1)
-        # pX_q_c (log-likelihood) -> (nx1)
-        pX_q_c = (1/((2*np.pi)**(d/2))) * (np.linalg.det(cov_q)**-0.5) * np.exp(-0.5*tmp) 
-        
-        #Enforcing Bounds on the likelihood values to prevent small, large or nan values
-        pX_q_c[pX_q_c<1e-8] = 1e-8
-        pX_q_c[pX_q_c==np.inf] = 1
-        pX_q_c[np.isnan(pX_q_c)] = 1e-8
+          #Inspecting the Covariance Matrix and enforcing non-singularity and positive definitiveness
+          while abs(det)<1e-12 or det<0 or min_eig < 0:
+            cov_q += abs(np.diag((np.random.normal(0,2,(d,1))).ravel()))  ##Addition of Gaussian Noise
+            det = np.linalg.det(cov_q)
+            if det > 0:
+              min_eig = np.min(np.real(np.linalg.eigvals(cov_q)))         ##Minimum Eigenvalue
+          
+          icov_q = np.linalg.inv(cov_q)  ##Inverse of Covariance Matrix
 
-        posterior[:,q] = w_q*pX_q_c
-        log_prob_a += w_q*pX_q_c ##(nx1 + ... q Q times) 
+          #Calculating likelihood given component/cluster
+          #X[t] -> (nxd), mu_q -> (dx1), cov_q -> (dxd), finally, tmp -> (nx1)
+          tmp  = np.sum(np.dot((X[Timepoints[t]].T-mu_q).T,icov_q) * (X[Timepoints[t]].T-mu_q).T,axis=1)
+          # pX_q_c (log-likelihood) -> (nx1)
+          pX_q_c = (1/((2*np.pi)**(d_t[Timepoints[t]]/2))) * (np.linalg.det(cov_q)**-0.5) * np.exp(-0.5*tmp) 
+          
+          #Enforcing Bounds on the likelihood values to prevent small, large or nan values
+          pX_q_c[pX_q_c<1e-8] = 1e-8
+          pX_q_c[pX_q_c==np.inf] = 1
+          pX_q_c[np.isnan(pX_q_c)] = 1e-8
 
-      #Calculating Total Log Probability
-      log_prob_a = np.sum(np.log(log_prob_a))  ##(nx1)
+          posterior[Timepoints[t]][:,q] = w_q*pX_q_c
+          log_prob_a += w_q*pX_q_c ##(nx1 + ... q Q times) 
 
-      #Calculating Posterior gamma -> (nxQ)
-      posterior /= np.sum(posterior,axis=1).reshape(-1,1)
+        #Calculating Total Log Probability
+        log_prob_a = np.sum(np.log(log_prob_a))  ##(nx1)
+
+        #Calculating Posterior gamma -> (nxQ)
+        posterior[Timepoints[t]] /= np.sum(posterior[Timepoints[t]],axis=1).reshape(-1,1)
       
+
       #***Maximization Step - Updating Parameters***
       #w_all -> (1xQ)
-      w_all = np.sum(posterior,axis = 0)/n_c
-      # print(w_all)
-      #mu_all -> (dxQ)
-      mu_all = (1/(w_all*n_c))*(np.matmul(posterior.T,X_c)).T
-      
-      for q in range(Q):
-        params[q] = {}
-        params[q]['w'] = w_all[q]
-        params[q]['mu'] = mu_all[:,q].reshape(-1,1)
-        #tmp -> (dxd)
-        tmp  = np.matmul(np.matmul(X_c.T-params[q]['mu'],np.diag(posterior[:,q])),(X_c.T-params[q]['mu']).T)
-        if case == "diag":
-          tmp = np.diag(np.diag(tmp))
+      for t in len(1,range(Timepoints)):
+        w_all = np.sum(posterior[Timepoints[t]],axis = 0)/n_t[Timepoints[t]]
+        # print(w_all)
+        #mu_all -> (dxQ)
+        #mu_all = (1/(w_all*n_c))*(np.matmul(posterior[Timepoints[t]].T,X_c)).T
+        v_num1 = np.matmul(posterior[Timepoints[t]].T,X[Timepoint[t]])
+        v_num2 = np.sum(posterior[Timepoints[t]], axis = 0)* params
+        
+        for q in range(Q):
+          params[q] = {}
+          params[q][Timepoints[t]] = {}
+          params[q][Timepoints[t]]['w'] = w_all[q]
+----------------------------------------------------------------------------------
+          params[q]['mu'] = mu_all[:,q].reshape(-1,1)
+          #tmp -> (dxd)
+          tmp  = np.matmul(np.matmul(X_c.T-params[q]['mu'],np.diag(posterior[:,q])),(X_c.T-params[q]['mu']).T)
+          if case == "diag":
+            tmp = np.diag(np.diag(tmp))
 
-        tmp2  = w_all[q]*n_c
+          tmp2  = w_all[q]*n_c
 
-        params[q]['cov'] = tmp/(tmp2)
-      ite += 1 
+          params[q]['cov'] = tmp/(tmp2)
+        ite += 1 
   params['class_support'] = class_support
   params['Q'] = Q
 
