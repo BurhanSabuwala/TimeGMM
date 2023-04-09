@@ -543,6 +543,30 @@ def stepwise_TimeGMM(X, Timepoints, Q, case = "diag", tol = 1e-8):
         params.append(TimeGMM(X, Timepoints[i:i+2], case, tol))
     return params
 
+def single_gaussian_best_fit(X, Timepoints, beta = 0.001, case = "diag", tol = 1e-8):
+    Q = 1
+    params = {}
+    params[0] = {}
+
+    n_t, d_t = {}, {}
+    for t in Timepoints:
+        n,d = np.shape(X[t])
+        n_t[t], d_t[t] = n, d
+
+    mu = [[0.0 for i in range(d_t[t])] for t in Timepoints]
+    mu = np.array(mu)
+
+    for t in range(len(Timepoints)):
+        params[Timepoints[t]] = GMM.gmm(X[Timepoints[t]], Q, case)
+        mu[t] = params[Timepoints[t]][0]['mu'][:,0]
+    time_matrix = np.array([[t, 1] for t in Timepoints])
+    
+    weights1 = np.linalg.inv(np.dot(time_matrix.T, time_matrix) + beta * np.identity(2))
+    weights2 = np.dot(time_matrix.T, mu)
+    weights = np.dot(weights1, weights2)
+    return weights
+
+
 
 """
 def EPTimeGMM(X, Timepoints, Q,case = "full",tol = 1e-8, beta = 0.1):
