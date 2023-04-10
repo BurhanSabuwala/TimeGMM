@@ -1,6 +1,8 @@
 # TimeGMM
 
-`TimeGMM(data, Timepoints, Q, case = "diag")`
+```{python} 
+TimeGMM(data, Timepoints, Q, case = "diag")
+```
 
 
 Timepoints - [t_1, t_2, ... t_T] # Timepoints for which the data is provided in the data object 
